@@ -27,6 +27,8 @@ This example illustrates the usage of IRC4Orca when dealing with a TS located on
 
 The following files are supplied (adopting the same nomenclature as the previous example):
 * __ada-ts-optts.inp__ - input file for Orca (TS search and optimization)
+* __ada-ts-optts.out__ - Orca output (TS search and optimization)
+* __ada-ts-optts.xyz__ - Orca output (TS search and optimization final geometry)
 * __ada-ts-optts.hess__ - hess file from Orca needed for IRC
 * __ada-ts-optts.gbw__ - gbw file from Orca 4.0.1 used as initial guess in the IRC calculations (optional, but highly recomended)
 * __ada-ts-irc-f.inp__ - Input file for IRC4Orca: IRC in the forward direction
