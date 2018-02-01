@@ -1,11 +1,14 @@
 #! /bin/bash
 
+# assuming Orca is installed in ${HOME}/compchem/orca/orca401 
+# and that the correct openmpi version is installed in ${HOME}/compchem/mpi/openmpi-2.0.2
+# please adapt these paths to match your system.
+
 export root="${HOME}/compchem/orca/orca401"
-source ${HOME}/compchem/mpi/openmpi-2.0.2-gnu.env
+export PATH=${HOME}/compchem/mpi/openmpi-2.0.2-gnu/bin:${PATH}
+export LD_LIBRARY_PATH=${HOME}/compchem/mpi/openmpi-2.0.2-gnu/lib:${LD_LIBRARY_PATH}
 export NBOVERSION=NBO5
 export NBOEXE=${root}/gennbo.exe
-#echo ${PATH}
-#echo ${LD_LIBRARY_PATH}
 out=$(echo $1 | sed 's/.inp/.out/')
 ${root}/orca $1 > $out
 
