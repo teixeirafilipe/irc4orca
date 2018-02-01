@@ -1,9 +1,9 @@
-#! /usr/bin/env python2
+#! /usr/bin/env python3
 # -*- coding: utf8 -*-
 
 ##########################################################################
 #                                                                        #
-# Programa: irc4orca                        Date: 16/05/2012             #
+# Programa: irc4orca                        Date: 29/01/2018             #
 #                                                                        #
 # Usage: irc4orca.py inpfilename                                         #
 #                                                                        #
@@ -14,6 +14,13 @@
 # to bear any indication as to the type of calculation (Opt, enGrad, SP  #
 # or MD keywords). The parameters to be read by the wrapper are given as #
 # comments, one instruction per line:                                    #
+#                                                                        #
+# Mandatory instructions:                                                #
+#                                                                        #
+# #orcacmd                    - location of an executable file that      #
+#                               takes an orca input as argument and      #
+#                               outputs Orca's input as a filen with     #
+#                               the same base name and the.out extension #
 #                                                                        #
 # Mandatory instructions (unless it's a restart):                        #
 #                                                                        #
@@ -30,8 +37,7 @@
 # #ircguess filename.gbw      - location of a GBW for the first point    #
 #                                                                        #
 # #ircalpha x.xx              - Alpha parameter for scaling the initial  #
-#                               displacement and gradients in successive #
-#                               steps (default: 0.1)                     #
+#                               displacement (default: 0.1).             #
 #                                                                        #
 # #ircdelta x.xx              - Scaling parameter for finding the closest#
 #                               minimum at a given point (default: 0.05).#
@@ -65,7 +71,7 @@
 #   NOTES: ircalpha and ircmaxd may be used together to fine tune the    #
 #          development of the IRC procedure. Small values of ircmaxd     #
 #          tend to make the calculation stop near the TS, so a larger    #
-#          ircalpha may be desired. Another soleution to the problem of  #
+#          ircalpha may be desired. Another solution to the problem of   #
 #          starting an IRC with small ircmaxd is to increase ircdamp     #
 #          up to 0.9 and use ircautodamp to reduce it when the gradient  #
 #          is string enough to carry the geometry towards its minimum.   #
@@ -85,10 +91,6 @@
 #                                                                        #
 ##########################################################################
 
-#This line has to be edited in order for the program to work
-#Parallel versions of Orca might require the full path
-orcacmd='/home/filipe/software/orca-3.0.1/orca'
-
 # No editing is required bellow this line #
 
 import os
@@ -103,7 +105,7 @@ class Atom():
 	def __init__(self, line):
 		l=line.split()
 		self.symbol=l[0]
-		self.coords=np.array(map(float,l[1:]))
+		self.coords=np.array(list(map(float,l[1:])))
 	def printxyz(self):
 		return "%s %9.6f %9.6f %9.6f\n"%(self.symbol, self.coords[0], self.coords[1], self.coords[2])
 
@@ -113,6 +115,7 @@ class ToolKit():
 		natoms=1
 		self.alpha=0.1
 		self.basename='.'.join(name.split('.')[:-1])
+		self.out=open("%s.log"%(self.basename),'a',1)
 		self.delta=0.05
 		self.direction=1
 		self.energies=[]
@@ -133,31 +136,32 @@ class ToolKit():
 		self.npoints=25
 		self.template=[]
 		self.tolerance=1.0e-04
+		self.orcacmd='UNDEFINED'
 		self.ReadInput(name)
 		self.ReadHessian()
 	def printPars(self):
-		stmp="  %10s: %s"
-		ftmp="  %10s: %7.4f"
-		itmp="  %10s: %7d"
-		print ''
-		print itmp%('Algorithm',self.algorithm)
-		print itmp%('N. Points',self.npoints)
-		print ftmp%('Grad. Tol.',self.tolerance)
-		print ''
-		print stmp%('Hessian',self.hessfn)
-		print itmp%('Mode',self.mode)
-		print itmp%('Direction',self.direction)
-		print ''
-		print ftmp%('Alpha',self.alpha)
-		print ftmp%('Delta',self.delta)
-		print ''
-		print ftmp%('Damp Factor',self.damp)
-		print itmp%('Damp Update',self.autodamp)
-		print ''
-		print ftmp%('Max. Displ.',self.maxdispl)
-		print ''
-		print stmp%('Guess',self.guessfn)
-		print "\n----------------------------------------------"
+		stmp="  %13s: %s\n"
+		ftmp="  %13s: %7.4f\n"
+		itmp="  %13s: %7d\n"
+		self.out.write('')
+		self.out.write(itmp%('Algorithm',self.algorithm))
+		self.out.write(itmp%('N. Points',self.npoints))
+		self.out.write(ftmp%('Grad. Tol.',self.tolerance))
+		self.out.write('')
+		self.out.write(stmp%('Hessian',self.hessfn))
+		self.out.write(itmp%('Mode',self.mode))
+		self.out.write(itmp%('Direction',self.direction))
+		self.out.write('')
+		self.out.write(ftmp%('Alpha',self.alpha))
+		self.out.write(ftmp%('Delta',self.delta))
+		self.out.write('')
+		self.out.write(ftmp%('Damp Factor',self.damp))
+		self.out.write(itmp%('Damp Update',self.autodamp))
+		self.out.write('')
+		self.out.write(ftmp%('Max. Displ.',self.maxdispl))
+		self.out.write('')
+		self.out.write(stmp%('Guess',self.guessfn))
+		self.out.write("\n------------------------------------------------\n")
 	def ReadInput(self,name):
 		#parse inp file
 		ifile=open(name,'r')
@@ -173,6 +177,9 @@ class ToolKit():
 				if 'irches' in line.lower(): #hess file name
 					l=line.split()
 					self.hessfn=l[-1]
+				elif 'orcacmd' in line.lower(): # orca executable
+					l=line.split()
+					self.orcacmd=l[-1]
 				elif 'ircguess' in line.lower(): # gbw file name for the initial guess
 					l=line.split()
 					self.guessfn=l[-1]
@@ -224,7 +231,6 @@ class ToolKit():
 			if (('*' not in line) and ingeo):
 				self.geometry.append(Atom(line))
 			if (copy):
-				#print "pt6 : coping:", line
 				line=line.lower()
 				line=line.replace('sp',' ')
 				line=line.replace('engrad',' ')
@@ -244,7 +250,7 @@ class ToolKit():
 		energy=0.00
 		modestart=0
 		massstart=0
-		for i in xrange(len(hdata)):
+		for i in range(len(hdata)):
 			if '$act_energy' in hdata[i]:
 				self.energies.append(float(hdata[i+1]))
 			if '$normal_modes' in hdata[i]:
@@ -262,10 +268,10 @@ class ToolKit():
 			elif ('.' in hdata[i]):
 				l=hdata[i].split()
 				line=int(l[0])
-				l=map(float,l[1:])
+				l=list(map(float,l[1:]))
 				modes[line,cols]=l
 			elif (hdata[i].strip != ''):
-				cols=map(int,hdata[i].split())
+				cols=list(map(int,hdata[i].split()))
 			i=i+1
 		done = False
 		i=massstart
@@ -304,7 +310,7 @@ def doEnergy(geo,pars):
 		inpfile.write(a.printxyz())
 	inpfile.write("*\n\n")
 	inpfile.close()
-	os.system("%s %s.inp > %s.out"%(orcacmd, name, name))
+	os.system("%s %s.inp > %s.out"%(pars.orcacmd, name, name))
 	opipe=os.popen("grep 'FINAL SINGLE POINT ENERGY' %s.out"%(name))
 	odata=opipe.readlines()
 	opipe.close()
@@ -328,7 +334,7 @@ def doGrad(geom,pars):
 		inpfile.write(a.printxyz())
 	inpfile.write("*\n\n")
 	inpfile.close()
-	os.system("%s %s.inp > %s.out"%(orcacmd, name, name))
+	os.system("%s %s.inp"%(pars.orcacmd, name))
 	os.system("mv %s.gbw %s"%(name,newguess))
 	pars.guessfn=newguess
 	ofile=open("%s.out"%(name),'r')
@@ -339,7 +345,7 @@ def doGrad(geom,pars):
 	for line in odata:
 		if (ingrad) and ':' in line:
 			ldata=line.split()
-			ldata=map(float,ldata[-3:])
+			ldata=list(map(float,ldata[-3:]))
 			s=3*atom
 			e=s+3
 			pars.grad[s:e]=ldata
@@ -364,7 +370,7 @@ def doGrad(geom,pars):
 ######################################
 
 def geodisplace(geo, pars, dvec):
-	#adjust for a mass weigthed displacement
+	#adjust geo for displacement dvec
 	displace=dvec
 	newgeo=[]
 	for i in geo:
@@ -394,21 +400,22 @@ def Morokuma(pars,start=False):
 	if (start):
 		#apply the appropriate sign to the displacement and convert to angs.
 		pars.displacement=float(pars.direction)*pars.displacement
-		for i in xrange(len(pars.mass)):
-			pars.displacement[(3*i)] /= np.sqrt(pars.mass[i])
-			pars.displacement[(3*i)+1] /= np.sqrt(pars.mass[i])
-			pars.displacement[(3*i)+2] /= np.sqrt(pars.mass[i])
-		pars.displacement=pars.maxdispl*(pars.displacement/np.linalg.norm(pars.displacement))
+		#for i in range(len(pars.mass)):
+		#	pars.displacement[(3*i)] /= np.sqrt(pars.mass[i])
+		#	pars.displacement[(3*i)+1] /= np.sqrt(pars.mass[i])
+		#	pars.displacement[(3*i)+2] /= np.sqrt(pars.mass[i])
+		pars.displacement=pars.alpha*(pars.displacement/np.linalg.norm(pars.displacement))
 		#displace geometry following the normal mode
 		geo1=geodisplace(pars.geometry,pars,pars.displacement)
 		E1,MG1=doGrad(geo1,pars)
-		#generate vector D, according to eq 6 in J. Chem. Phys. 66, 2153
-		tmpvec=(pars.alpha*0.001)*pars.grad
+		#generate vector D, adapting from eq 6 in J. Chem. Phys. 66, 2153
+		tmpvec=pars.grad
 		D=-(pars.displacement/np.linalg.norm(pars.displacement))+(tmpvec/np.linalg.norm(tmpvec))
+		#D=(pars.displacement/np.linalg.norm(pars.displacement))-(tmpvec/np.linalg.norm(tmpvec))
 	else:
 		#scale down gradients and calculate the displacement
-		pars.displacement=(pars.damp*pars.displacement)-((1.0-pars.damp)*(pars.alpha*0.001)*pars.grad)
-		for i in xrange(len(pars.mass)):
+		pars.displacement=(pars.damp*pars.displacement)-((1.0-pars.damp)*pars.grad)
+		for i in range(len(pars.mass)):
 			pars.displacement[(3*i)] /= np.sqrt(pars.mass[i])
 			pars.displacement[(3*i)+1] /= np.sqrt(pars.mass[i])
 			pars.displacement[(3*i)+2] /= np.sqrt(pars.mass[i])
@@ -416,8 +423,8 @@ def Morokuma(pars,start=False):
 		#displace geometry following the gradient
 		geo1=geodisplace(pars.geometry,pars,pars.displacement)
 		E1,MG1=doGrad(geo1,pars)
-		#generate vector D, according to eq 6 in J. Chem. Phys. 66, 2153
-		tmpvec=(pars.alpha*0.001)*pars.grad
+		#generate vector D, adapting from eq 6 in J. Chem. Phys. 66, 2153
+		tmpvec=pars.grad
 		D=(pars.displacement/np.linalg.norm(pars.displacement))-(tmpvec/np.linalg.norm(tmpvec))
 	# find the optimum delta that will assure the new point is at the 
 	# local minimum
@@ -447,7 +454,7 @@ def Morokuma(pars,start=False):
 		Evals=np.array([E1, E2, E3, E4, E5])
 		Deltavals=np.array([0.0,pars.delta,delta3, delta4, delta5])
 	deltaFit=np.polyfit(Deltavals,Evals,deg=2)
-	opdelta=-(deltaFit[1]/(2.0*deltaFit[2]))
+	opdelta=-(deltaFit[1]/(2.0*deltaFit[0]))
 	# update the geometry to the new point, update and return energy and gradients
 	pars.geos.append(pars.geometry)
 	pars.energies.append(pars.energy)
@@ -455,25 +462,25 @@ def Morokuma(pars,start=False):
 	newE, newMaxGrad = doGrad(pars.geometry,pars) 
 	pars.energy=newE
 	#the following line is just for debugging purposes
-	#print Evals, Deltavals,np.linalg.norm(pars.displacement), opdelta
+	#print(Evals, Deltavals,np.linalg.norm(pars.displacement), opdelta)
 	return (newE, newMaxGrad)
 
 def ircdrv(inpname):
 	params=ToolKit(inpname)
-	print """  IRC wrapper for Orca
+	params.out.write("""   IRC wrapper for Orca - version 2.0
    by Filipe Teixeira, 
    REQUIMTE
    Faculdade de Ciencias da Universidade do Porto
 
   Using Orca from: %s 
   
-  Parameters for this run: """%(orcacmd)
+  Parameters for this run: \n"""%(params.orcacmd))
 	params.printPars()
 	keep=True
 	n=0
 	oldE=0.0
-	print " Pt. %20s %9s %10s"%('Energy','RMS Grad.','Damp')
-	print "----------------------------------------------"
+	params.out.write("   Pt. %20s %9s %10s\n"%('Energy','RMS Grad.','Damp'))
+	params.out.write("------------------------------------------------\n")
 	while (keep):
 		if (params.restart or (n>0)):
 			E,MG=Morokuma(params,False)
@@ -485,36 +492,49 @@ def ircdrv(inpname):
 			if (params.damp<1.0e-5):
 				params.damp=0.0
 				params.autodamp=False
-		print ' %3d %20.9f %9.5f %10.2e'%(n, E, MG, params.damp)
+		params.out.write('@  %3d %20.9f %9.5f %10.2e\n'%(n, E, MG, params.damp))
 		if (n>params.npoints):
 			keep=False
 			printTrj(params,n) #appends newGeo
-			print "----------------------------------------------"
-			print "--          IRC CALCULATION ENDED           --"
-			print "--             MAXPTS ACHIEVED!             --"
-			print "----------------------------------------------"
+			params.out.write("----------------------------------------------\n")
+			params.out.write("--          IRC CALCULATION ENDED           --\n")
+			params.out.write("--             MAXPTS ACHIEVED!             --\n")
+			params.out.write("----------------------------------------------\n")
 		elif (MG<params.tolerance):
 			keep=False
 			printTrj(params,n) #appends newGeo
-			print "----------------------------------------------"
-			print "--          IRC CALCULATION ENDED           --"
-			print "--               TOL ACHIEVED!              --"
-			print "----------------------------------------------"
+			params.out.write("----------------------------------------------\n")
+			params.out.write("--          IRC CALCULATION ENDED           --\n")
+			params.out.write("--              TOL ACHIEVED!               --\n")
+			params.out.write("----------------------------------------------\n")
 		elif (E>oldE):
 			keep=False
-			print "----------------------------------------------"
-			print "--             ENERGY INCREASED             --"
-			print "--            GEOMETRY  MIGHT BE            --"
-			print "--          VERY CLOSE TO A MINIMUM         --"
-			print "--                                          --"
-			print "--       IRC CALCULATION TERMINATED!        --"
-			print "----------------------------------------------"
+			#printTrj(params,n) #appends newGeo
+			params.out.write("----------------------------------------------\n")
+			params.out.write("--             ENERGY INCREASED             --\n")
+			params.out.write("--            GEOMETRY  MIGHT BE            --\n")
+			params.out.write("--          VERY CLOSE TO A MINIMUM         --\n")
+			params.out.write("--                                          --\n")
+			params.out.write("--        IRC CALCULATION TERMINATED!       --\n")
+			params.out.write("----------------------------------------------\n")
 		else:
 			printTrj(params,n) #appends newGeo
 			oldE=E
+	params.out.close()
 
 
 
 if __name__=='__main__':
+	if(len(sys.argv)!=2):
+		print("""IRC4Orca - Version 2.0
+An Implementation of Morokuma's IRC method for the Orca ESS Software.
+by Filipe Teixeira
+
+Usage: %s file.inp
+
+Please consult https://github.com/teixeirafilipe/irc4orca for more information.
+
+"""%(sys.argv[0]))
+		sys.exit(1)
 	ircdrv(sys.argv[1])
 
