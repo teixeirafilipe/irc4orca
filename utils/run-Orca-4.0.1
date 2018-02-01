@@ -1,0 +1,11 @@
+#! /bin/bash
+
+export root="${HOME}/compchem/orca/orca401"
+source ${HOME}/compchem/mpi/openmpi-2.0.2-gnu.env
+export NBOVERSION=NBO5
+export NBOEXE=${root}/gennbo.exe
+#echo ${PATH}
+#echo ${LD_LIBRARY_PATH}
+out=$(echo $1 | sed 's/.inp/.out/')
+${root}/orca $1 > $out
+
